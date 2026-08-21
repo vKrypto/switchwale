@@ -25,8 +25,9 @@ import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import AnimatedCounter from './components/AnimatedCounter';
 import AgentCharacter from './components/AgentCharacter';
+import { withBase } from './basePath';
 
-const CONTACT_URL = '/contact/';
+const CONTACT_URL = withBase('/contact/');
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -221,20 +222,20 @@ const JOURNEY: JourneyStep[] = [
     step: '1',
     title: 'Paste your resume',
     description: 'One upload. The agent reads it once and reuses it everywhere — every tailored resume starts here.',
-    image: '/landing/profile-optimizer-resume-on-file.png',
+    image: withBase('/landing/profile-optimizer-resume-on-file.png'),
   },
   {
     step: '2',
     title: 'Set your preferences',
     description: 'Roles, locations, salary, interview availability — set it once and the agent respects it every time.',
-    image: '/landing/settings-interview-availability.png',
+    image: withBase('/landing/settings-interview-availability.png'),
   },
   {
     step: '3',
     title: 'Wait for the interview call',
     description:
       "The agent applies, follows up, and requests referrals in the background. You just acknowledge actions in one click and watch your calendar fill itself.",
-    image: '/landing/actions-inbox-one-click.png',
+    image: withBase('/landing/actions-inbox-one-click.png'),
     note: 'Interview invites land on your calendar automatically — no manual entry.',
   },
 ];
@@ -300,37 +301,37 @@ const FEATURES: Feature[] = [
     icon: Sparkles,
     title: 'Multi-channel auto-apply',
     description: 'Naukri, LinkedIn, Instahyre, JSearch — new matching jobs get applied to automatically, no click required.',
-    image: '/landing/job-detail-auto-apply.png',
+    image: withBase('/landing/job-detail-auto-apply.png'),
   },
   {
     icon: FileText,
     title: 'AI-tailored resume + ATS score',
     description: 'Every application gets its own resume, rewritten to match the JD, scored against it. 2,200+ generated so far.',
-    image: '/landing/job-resumes-ats-score.png',
+    image: withBase('/landing/job-resumes-ats-score.png'),
   },
   {
     icon: FileText,
     title: 'AI cover letter, on demand',
     description: 'Paste the JD, get a tailored cover letter as a polished PDF. No template, no writer’s block.',
-    image: '/landing/resume-maker-cover-letter.png',
+    image: withBase('/landing/resume-maker-cover-letter.png'),
   },
   {
     icon: LayoutDashboard,
     title: 'One dashboard, every platform',
     description: 'Every application and its status, tracked automatically across every connected job board.',
-    image: '/landing/dashboard-overview.png',
+    image: withBase('/landing/dashboard-overview.png'),
   },
   {
     icon: Mail,
     title: 'AI Reply on every conversation',
     description: 'A recruiter pings you anywhere — one click drafts a reply that sounds like you, not a bot.',
-    image: '/landing/instahyre-conversations-ai-reply.png',
+    image: withBase('/landing/instahyre-conversations-ai-reply.png'),
   },
   {
     icon: Send,
     title: 'Referrals sent for you',
     description: 'Personalized referral requests to recruiters and hiring managers, sent in your voice, at scale.',
-    image: '/landing/referral-email-sent.png',
+    image: withBase('/landing/referral-email-sent.png'),
   },
 ];
 

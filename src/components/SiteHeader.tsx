@@ -1,17 +1,18 @@
 import { ArrowRight } from 'lucide-react';
 import BrandMark from './BrandMark';
 import ThemeToggle from './ThemeToggle';
+import { withBase } from '../basePath';
 
 // Everything routes to /contact/ for now — there's no live signup/login
 // flow to send visitors to yet, so every "Sign in" / "Get started" just
 // starts a conversation instead.
-const CONTACT_URL = '/contact/';
+const CONTACT_URL = withBase('/contact/');
 
 export default function SiteHeader() {
   return (
     <header className="sticky top-0 z-10 border-b border-gray-200 dark:border-gray-800 bg-gray-50/80 dark:bg-gray-950/80 backdrop-blur">
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-        <a href="/" className="flex items-center gap-2 font-semibold text-lg">
+        <a href={withBase('/')} className="flex items-center gap-2 font-semibold text-lg">
           <BrandMark size={26} />
           <span className="hidden sm:inline">SwitchWala</span>
         </a>

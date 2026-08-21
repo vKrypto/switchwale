@@ -1,3 +1,5 @@
+import { withBase } from '../basePath';
+
 type BrandMarkProps = {
   className?: string;
   size?: number;
@@ -10,14 +12,14 @@ export default function BrandMark({ className, size = 28 }: BrandMarkProps) {
   return (
     <>
       <img
-        src="/logo-light.png"
+        src={withBase('/logo-light.png')}
         alt="SwitchWala"
         height={size}
         className={`block dark:hidden w-auto ${className ?? ''}`}
         style={{ height: size }}
       />
       <img
-        src="/logo-dark.png"
+        src={withBase('/logo-dark.png')}
         alt="SwitchWala"
         height={size}
         className={`hidden dark:block w-auto ${className ?? ''}`}
