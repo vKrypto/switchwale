@@ -2,6 +2,7 @@ import type { FormEvent } from 'react';
 import { User, Mail, Phone, Briefcase, IndianRupee, Clock, Send, Upload } from 'lucide-react';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
+import { addEvent } from './lib/events';
 
 const WHATSAPP_NUMBER = '917355437836';
 
@@ -26,7 +27,18 @@ function buildWhatsAppMessage(form: FormData): string {
 
 function handleSubmit(event: FormEvent<HTMLFormElement>) {
   event.preventDefault();
-  const message = buildWhatsAppMessage(new FormData(event.currentTarget));
+  const form = new FormData(event.currentTarget);
+  const resume = form.get('resume') as File | null;
+  void addEvent('lead_generation', 'contact_form_submit', 1, {
+    name: form.get('name'),
+    email: form.get('email'),
+    phone: form.get('phone'),
+    title: form.get('title'),
+    experience: form.get('experience'),
+    salary: form.get('salary'),
+    has_resume: !!resume && resume.size > 0,
+  });
+  const message = buildWhatsAppMessage(form);
   window.location.href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
 }
 

@@ -1,0 +1,114 @@
+BASE_URL=https://your-id.execute-api.us-east-1.amazonaws.com/dev
+
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Integration tests against the LIVE, deployed mini-server API. Hits real
+# AWS (API Gateway -> Lambda -> DynamoDB) — the stack must already be
+# deployed. See tests/README.md.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+BASE_URL="${API_BASE_URL:-}"
+if [ -z "$BASE_URL" ]; then
+  BASE_URL="$(cd "$SCRIPT_DIR/../infra/environments/dev" && terraform output -raw api_invoke_url 2>/dev/null)"
+fi
+
+if [ -z "$BASE_URL" ]; then
+  echo "Could not determine the API base URL." >&2
+  echo "Set API_BASE_URL, or deploy the stack first so 'terraform output' has it." >&2
+  exit 1
+fi
+
+echo "Testing against: $BASE_URL"
+echo
+
+PASS=0
+FAIL=0
+
+TENANT="mini-server-test.example.com"
+SESSION_ID="test$(date +%s)abcdefghijklmno"
+USER_ID="test-user-$$"
+NOW="$(date -u +%Y-%m-%dT%H:%M:%S.000000Z)"
+
+# request METHOD PATH [curl-args...] — sets RESP_STATUS and RESP_BODY
+request() {
+  local method="$1" path="$2"
+  shift 2
+  local tmp
+  tmp="$(mktemp)"
+  RESP_STATUS="$(curl -s -o "$tmp" -w "%{http_code}" -X "$method" "$BASE_URL$path" "$@")"
+  RESP_BODY="$(cat "$tmp")"
+  rm -f "$tmp"
+}
+
+# check DESCRIPTION EXPECTED_STATUS [EXPECTED_BODY_SUBSTRING]
+check() {
+  local desc="$1" expected_status="$2" expected_substring="${3:-}"
+  if [ "$RESP_STATUS" != "$expected_status" ]; then
+    echo "FAIL: $desc (expected status $expected_status, got $RESP_STATUS; body: $RESP_BODY)"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  if [ -n "$expected_substring" ] && [[ "$RESP_BODY" != *"$expected_substring"* ]]; then
+    echo "FAIL: $desc (status ok but body missing '$expected_substring'; body: $RESP_BODY)"
+    FAIL=$((FAIL + 1))
+    return
+  fi
+  echo "PASS: $desc"
+  PASS=$((PASS + 1))
+}
+
+echo "--- /ping ---"
+request GET /ping
+check "ping returns pong" 200 '"message": "pong"'
+
+echo "--- /health ---"
+request GET /health
+check "health returns ok" 200 '"status": "ok"'
+
+echo "--- /add-event ---"
+request POST /add-event
+check "add-event without headers returns 400" 400
+
+request POST /add-event \
+  -H "tenant_name: $TENANT" \
+  -H "session_id: $SESSION_ID" \
+  -H "Content-Type: application/json" \
+  -d "{\"event_type\":\"monitor\",\"event_name\":\"scroll\",\"event_value\":0.5,\"send_time\":\"$NOW\"}"
+check "add-event with valid payload returns ok" 200 '"status": "ok"'
+
+request POST /add-event \
+  -H "tenant_name: $TENANT" \
+  -H "session_id: $SESSION_ID" \
+  -H "Content-Type: application/json" \
+  -d "{\"event_type\":\"conversion\",\"event_name\":\"banner_click\",\"user_id\":\"$USER_ID\",\"send_time\":\"$NOW\"}"
+check "add-event with user_id returns ok" 200 '"status": "ok"'
+
+echo "--- /get-events ---"
+request GET /get-events
+check "get-events without headers returns 400" 400
+
+request GET /get-events -H "tenant_name: $TENANT" -H "session_id: $SESSION_ID"
+check "get-events returns the events just written" 200 "\"session_id\": \"$SESSION_ID\""
+
+echo "--- /get-user-events ---"
+request GET /get-user-events
+check "get-user-events without tenant_name header returns 400" 400
+
+request GET /get-user-events -H "tenant_name: $TENANT"
+check "get-user-events without user_id query param returns 400" 400
+
+request GET "/get-user-events?user_id=$USER_ID" -H "tenant_name: $TENANT"
+check "get-user-events returns the event written for that user" 200 "\"user_id\": \"$USER_ID\""
+
+echo "--- /get-summary ---"
+request GET /get-summary
+check "get-summary without tenant_name header returns 400" 400
+
+request GET /get-summary -H "tenant_name: $TENANT"
+check "get-summary returns a count for the tenant" 200 "\"tenant_name\": \"$TENANT\""
+
+echo
+echo "Results: $PASS passed, $FAIL failed"
+[ "$FAIL" -eq 0 ]
