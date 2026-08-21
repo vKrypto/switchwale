@@ -25,6 +25,13 @@ type QueuedEvent = {
   send_time: string;
 };
 
+// sessionId travels with the record (not just as a header) because the
+// service worker's own sync-triggered flush has no access to localStorage.
+type StoredRecord = {
+  sessionId: string;
+  event: QueuedEvent;
+};
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -65,26 +72,26 @@ function collectBrowserInfo(): Record<string, unknown> {
   };
 }
 
-async function enqueue(event: QueuedEvent): Promise<void> {
+async function enqueue(record: StoredRecord): Promise<void> {
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite');
-    tx.objectStore(STORE_NAME).add(event);
+    tx.objectStore(STORE_NAME).add(record);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
 }
 
-async function readQueueSnapshot(): Promise<{ key: IDBValidKey; value: QueuedEvent }[]> {
+async function readQueueSnapshot(): Promise<{ key: IDBValidKey; value: StoredRecord }[]> {
   const db = await openDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
-    const items: { key: IDBValidKey; value: QueuedEvent }[] = [];
+    const items: { key: IDBValidKey; value: StoredRecord }[] = [];
     const req = tx.objectStore(STORE_NAME).openCursor();
     req.onsuccess = () => {
       const cursor = req.result;
       if (cursor) {
-        items.push({ key: cursor.primaryKey, value: cursor.value as QueuedEvent });
+        items.push({ key: cursor.primaryKey, value: cursor.value as StoredRecord });
         cursor.continue();
       } else {
         resolve(items);
@@ -108,15 +115,15 @@ async function removeFromQueue(keys: IDBValidKey[]): Promise<void> {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// postEvents([e1, e2]) → true once /add-events returns 2xx, false after 3 failed attempts
-async function postEvents(events: QueuedEvent[]): Promise<boolean> {
+// postEvents([e1, e2], sessionId) → true once /add-events returns 2xx, false after 3 failed attempts
+async function postEvents(events: QueuedEvent[], sessionId: string): Promise<boolean> {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const res = await fetch(`${API_BASE_URL}/add-events`, {
         method: 'POST',
         headers: {
           tenant_name: TENANT_NAME,
-          session_id: getSessionId(),
+          session_id: sessionId,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ events }),
@@ -141,7 +148,8 @@ async function flushQueue(): Promise<void> {
   try {
     const snapshot = await readQueueSnapshot();
     if (snapshot.length === 0) return;
-    const ok = await postEvents(snapshot.map((item) => item.value));
+    const sessionId = snapshot[0].value.sessionId;
+    const ok = await postEvents(snapshot.map((item) => item.value.event), sessionId);
     if (ok) {
       await removeFromQueue(snapshot.map((item) => item.key));
     } else {
@@ -149,6 +157,35 @@ async function flushQueue(): Promise<void> {
     }
   } finally {
     flushing = false;
+  }
+}
+
+interface SyncManager {
+  register(tag: string): Promise<void>;
+}
+interface ServiceWorkerRegistrationWithSync extends ServiceWorkerRegistration {
+  sync: SyncManager;
+}
+
+let swRegistration: ServiceWorkerRegistration | undefined;
+
+async function registerServiceWorker(): Promise<void> {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    swRegistration = await navigator.serviceWorker.register('/service-worker.js');
+  } catch {
+    // unsupported/blocked — the main-thread interval still covers flushing
+  }
+}
+
+// Safety net for the tab-closed case: ask the SW to flush once connectivity
+// returns, on top of the 10s main-thread interval that runs while open.
+async function requestBackgroundSync(): Promise<void> {
+  if (!swRegistration || !('sync' in swRegistration)) return;
+  try {
+    await (swRegistration as ServiceWorkerRegistrationWithSync).sync.register('flush-events');
+  } catch {
+    // Background Sync unsupported/denied — main-thread interval still covers it
   }
 }
 
@@ -161,15 +198,19 @@ export async function addEvent(
   userId = '',
 ): Promise<void> {
   await enqueue({
-    event_type: eventType,
-    event_name: eventName,
-    event_value: eventValue,
-    data,
-    user_id: userId,
-    user_info: {},
-    browser_info: collectBrowserInfo(),
-    send_time: microsecondTimestamp(),
+    sessionId: getSessionId(),
+    event: {
+      event_type: eventType,
+      event_name: eventName,
+      event_value: eventValue,
+      data,
+      user_id: userId,
+      user_info: {},
+      browser_info: collectBrowserInfo(),
+      send_time: microsecondTimestamp(),
+    },
   });
+  void requestBackgroundSync();
 }
 
 // getElementXPath(buttonEl) → '//*[@id="submit"]' or '/body[1]/main[1]/button[2]'
@@ -237,6 +278,7 @@ function handleDocumentClick(event: MouseEvent): void {
 if (typeof window !== 'undefined') {
   setInterval(flushQueue, FLUSH_INTERVAL_MS);
   window.addEventListener('online', flushQueue);
+  void registerServiceWorker();
 
   trackPageVisit();
   window.addEventListener('scroll', trackScrollDebounced, { passive: true });
