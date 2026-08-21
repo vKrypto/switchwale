@@ -9,7 +9,7 @@ function buildWhatsAppMessage(form: FormData): string {
   const get = (key: string) => (form.get(key) as string | null)?.trim() || '-';
   const resume = form.get('resume') as File | null;
   const lines = [
-    "Hi! I'd like to talk about GetInterviewed.",
+    "Hi! I'd like to talk about SwitchWala.",
     '',
     `Name: ${get('name')}`,
     `Email: ${get('email')}`,

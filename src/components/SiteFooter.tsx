@@ -5,7 +5,7 @@ export default function SiteFooter() {
     <footer className="border-t border-gray-200 dark:border-gray-800 py-8">
       <div className="max-w-6xl mx-auto px-6 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-500">
         <BrandMark size={18} />
-        GetInterviewed
+        SwitchWala
       </div>
     </footer>
   );

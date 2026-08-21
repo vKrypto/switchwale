@@ -13,7 +13,7 @@ export default function SiteHeader() {
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         <a href="/" className="flex items-center gap-2 font-semibold text-lg">
           <BrandMark size={26} />
-          <span className="hidden sm:inline">GetInterviewed</span>
+          <span className="hidden sm:inline">SwitchWala</span>
         </a>
         <div className="flex items-center gap-2 sm:gap-4">
           <ThemeToggle />

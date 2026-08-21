@@ -485,7 +485,7 @@ export default function WelcomePage() {
           <span className="text-brand-600 dark:text-brand-500">You just show up.</span>
         </motion.h1>
         <motion.p variants={fadeUp} className="mt-6 text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
-          Job hunting shouldn&rsquo;t be a second full-time job. GetInterviewed applies, tailors, follows up, and
+          Job hunting shouldn&rsquo;t be a second full-time job. SwitchWala applies, tailors, follows up, and
           requests referrals for you across every platform — while you do literally nothing.
         </motion.p>
         <motion.div variants={fadeUp} className="mt-8 flex items-center justify-center gap-4">
