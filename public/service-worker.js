@@ -9,6 +9,7 @@ const DB_NAME = 'switchwala_events';
 const STORE_NAME = 'queue';
 const CACHE_PREFIX = 'switchwala-cache-';
 const FLUSH_INTERVAL_MS = 10_000;
+const MAX_BATCH_SIZE = 50;
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -108,8 +109,13 @@ function flushQueue() {
     const valid = snapshot.filter((item) => isValidRecord(item.value));
     if (valid.length === 0) return cleanup;
 
-    const sessionId = valid[0].value.sessionId;
-    const events = valid.map((item) => item.value.event);
+    // readQueueSnapshot's cursor walks keys ascending (oldest first), so
+    // the last MAX_BATCH_SIZE entries are the most recently queued ones.
+    // Backlog beyond that stays queued for the next tick — under sustained
+    // overload the oldest events lag behind, favoring fresh data.
+    const batch = valid.slice(-MAX_BATCH_SIZE);
+    const sessionId = batch[0].value.sessionId;
+    const events = batch.map((item) => item.value.event);
     return cleanup.then(() =>
       fetch(`${API_BASE_URL}/add-events`, {
         method: 'PUT',
@@ -121,7 +127,7 @@ function flushQueue() {
         body: JSON.stringify({ events }),
       }).then((res) => {
         if (!res.ok) throw new Error(`add-events failed: ${res.status}`);
-        return removeFromQueue(valid.map((item) => item.key));
+        return removeFromQueue(batch.map((item) => item.key));
       })
     );
   }).finally(() => {
