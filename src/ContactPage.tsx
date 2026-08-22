@@ -8,21 +8,11 @@ const WHATSAPP_NUMBER = '917355437836';
 
 function buildWhatsAppMessage(form: FormData): string {
   const get = (key: string) => (form.get(key) as string | null)?.trim() || '-';
-  const resume = form.get('resume') as File | null;
-  const lines = [
-    "Hi! I'd like to talk about SwitchWala.",
-    '',
-    `Name: ${get('name')}`,
-    `Email: ${get('email')}`,
-    `Phone: ${get('phone')}`,
-    `Current title: ${get('title')}`,
-    `Total experience: ${get('experience')}`,
-    `Target salary: ${get('salary')}`,
-  ];
-  if (resume && resume.size > 0) {
-    lines.push(`Resume: ${resume.name} (attaching this in the chat)`);
-  }
-  return lines.join('\n');
+  return [
+    `Hi! I'm ${get('name')}.`,
+    `I'm currently working as ${get('title')} with ${get('experience')} of experience.`,
+    `My expected CTC is ${get('salary')}.`,
+  ].join(' ');
 }
 
 function handleSubmit(event: FormEvent<HTMLFormElement>) {
