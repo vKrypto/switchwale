@@ -85,28 +85,23 @@ interface ServiceWorkerRegistrationWithSync extends ServiceWorkerRegistration {
 
 let swRegistration: ServiceWorkerRegistration | undefined;
 
+// Registered once per page load, not per event — the SW's own 10s interval
+// (see service-worker.js) is what batches events; this is only a one-time
+// nudge plus the tab-closed/reconnect safety net.
 async function registerServiceWorker(): Promise<void> {
   if (!('serviceWorker' in navigator)) return;
   try {
     swRegistration = await navigator.serviceWorker.register('/service-worker.js');
+    if ('sync' in swRegistration) {
+      await (swRegistration as ServiceWorkerRegistrationWithSync).sync.register('flush-events');
+    }
   } catch {
-    // unsupported/blocked — events still queue in IndexedDB, waiting for a SW
+    // unsupported/blocked — events still queue in IndexedDB, picked up once a SW runs
   }
 }
 
-// Wakes the SW to flush the queue. On browsers without Background Sync
-// support (e.g. Safari), this is a no-op and queued events only go out the
-// next time the SW happens to receive some other event.
-async function requestBackgroundSync(): Promise<void> {
-  if (!swRegistration || !('sync' in swRegistration)) return;
-  try {
-    await (swRegistration as ServiceWorkerRegistrationWithSync).sync.register('flush-events');
-  } catch {
-    // Background Sync registration rejected — nothing else to fall back to here
-  }
-}
-
-// addEvent('lead_generation', 'contact_form_submit', 1, { email: 'a@b.com' }) → queues it in IndexedDB
+// addEvent('lead_generation', 'contact_form_submit', 1, { email: 'a@b.com' }) → queues it in IndexedDB;
+// the service worker's own interval picks it up and sends it in the next batch, not instantly.
 export async function addEvent(
   eventType: string,
   eventName: string,
@@ -127,7 +122,6 @@ export async function addEvent(
       send_time: microsecondTimestamp(),
     },
   });
-  void requestBackgroundSync();
 }
 
 // getElementXPath(buttonEl) → '//*[@id="submit"]' or '/body[1]/main[1]/button[2]'

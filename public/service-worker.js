@@ -8,6 +8,7 @@ const TENANT_NAME = 'switchwale.com';
 const DB_NAME = 'switchwala_events';
 const STORE_NAME = 'queue';
 const CACHE_PREFIX = 'switchwala-cache-';
+const FLUSH_INTERVAL_MS = 10_000;
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -89,12 +90,17 @@ function isValidRecord(value) {
   );
 }
 
-// Same batch flush as the main-thread interval in src/lib/events.ts, but
-// triggered by the browser's Background Sync instead of a timer — this is
-// the safety net for events queued right before the tab got closed.
+// The only place that talks to the network: batches whatever is sitting in
+// IndexedDB and sends it as one /add-events call. Runs every 10s (below) —
+// events are never sent the instant they're queued, only on this cadence.
 // Leaving a failure unhandled (no catch) lets the browser's own Background
-// Sync retry/backoff pick it back up; we don't reimplement that here.
+// Sync retry/backoff pick it back up on the 'sync'-triggered call; we don't
+// reimplement that here.
+let flushing = false;
+
 function flushQueue() {
+  if (flushing) return Promise.resolve();
+  flushing = true;
   return readQueueSnapshot().then((snapshot) => {
     const corrupt = snapshot.filter((item) => !isValidRecord(item.value));
     const cleanup = corrupt.length > 0 ? removeFromQueue(corrupt.map((item) => item.key)) : Promise.resolve();
@@ -118,6 +124,8 @@ function flushQueue() {
         return removeFromQueue(valid.map((item) => item.key));
       })
     );
+  }).finally(() => {
+    flushing = false;
   });
 }
 
@@ -126,3 +134,9 @@ self.addEventListener('sync', (event) => {
     event.waitUntil(flushQueue());
   }
 });
+
+// The batching cadence itself. Note: the browser can terminate an idle SW
+// instance at any time, which cancels this interval — it resumes as soon as
+// the SW is next woken (by 'sync', a page load, etc). The 'sync' listener
+// above is the backstop for whatever this interval missed while suspended.
+setInterval(flushQueue, FLUSH_INTERVAL_MS);
