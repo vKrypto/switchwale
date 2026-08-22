@@ -76,6 +76,19 @@ function removeFromQueue(keys) {
   );
 }
 
+// Guards against records left behind by an older/incompatible schema — never
+// send those, just drop them (mirrors isValidRecord in src/lib/events.ts).
+function isValidRecord(value) {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof value.sessionId === 'string' &&
+    value.sessionId.length > 0 &&
+    !!value.event &&
+    typeof value.event === 'object'
+  );
+}
+
 // Same batch flush as the main-thread interval in src/lib/events.ts, but
 // triggered by the browser's Background Sync instead of a timer — this is
 // the safety net for events queued right before the tab got closed.
@@ -83,21 +96,28 @@ function removeFromQueue(keys) {
 // Sync retry/backoff pick it back up; we don't reimplement that here.
 function flushQueue() {
   return readQueueSnapshot().then((snapshot) => {
-    if (snapshot.length === 0) return;
-    const sessionId = snapshot[0].value.sessionId;
-    const events = snapshot.map((item) => item.value.event);
-    return fetch(`${API_BASE_URL}/add-events`, {
-      method: 'POST',
-      headers: {
-        tenant_name: TENANT_NAME,
-        session_id: sessionId,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ events }),
-    }).then((res) => {
-      if (!res.ok) throw new Error(`add-events failed: ${res.status}`);
-      return removeFromQueue(snapshot.map((item) => item.key));
-    });
+    const corrupt = snapshot.filter((item) => !isValidRecord(item.value));
+    const cleanup = corrupt.length > 0 ? removeFromQueue(corrupt.map((item) => item.key)) : Promise.resolve();
+
+    const valid = snapshot.filter((item) => isValidRecord(item.value));
+    if (valid.length === 0) return cleanup;
+
+    const sessionId = valid[0].value.sessionId;
+    const events = valid.map((item) => item.value.event);
+    return cleanup.then(() =>
+      fetch(`${API_BASE_URL}/add-events`, {
+        method: 'POST',
+        headers: {
+          tenant_name: TENANT_NAME,
+          session_id: sessionId,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ events }),
+      }).then((res) => {
+        if (!res.ok) throw new Error(`add-events failed: ${res.status}`);
+        return removeFromQueue(valid.map((item) => item.key));
+      })
+    );
   });
 }
 

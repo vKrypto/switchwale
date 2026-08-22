@@ -1,18 +1,11 @@
-// Offline-resilient event tracking: addEvent() buffers into IndexedDB,
-// a 10s interval (+ 'online' listener) bulk-flushes the queue to /add-events.
-// Deletion targets each record's own IndexedDB auto-increment key, so
-// events added mid-flush (new keys) are never touched by that flush.
-// A failed flush (3 attempts, all failed) pauses further flushing for 5min.
+// Main-thread role, and nothing more: addEvent() writes a record into
+// IndexedDB and asks the service worker for a background sync. All network
+// delivery (batching, retry, /add-events) lives in public/service-worker.js
+// — this file never calls fetch.
 
 const DB_NAME = 'switchwala_events';
 const STORE_NAME = 'queue';
-const TENANT_NAME = 'switchwale.com';
 const SESSION_ID_KEY = 'switchwala_session_id';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://your-id.execute-api.us-east-1.amazonaws.com/dev';
-const FLUSH_INTERVAL_MS = 10_000;
-const MAX_ATTEMPTS = 3;
-const RETRY_BASE_DELAY_MS = 500;
-const PAUSE_AFTER_FAILURE_MS = 5 * 60 * 1000;
 
 type QueuedEvent = {
   event_type: string;
@@ -26,7 +19,7 @@ type QueuedEvent = {
 };
 
 // sessionId travels with the record (not just as a header) because the
-// service worker's own sync-triggered flush has no access to localStorage.
+// service worker's sync-triggered flush has no access to localStorage.
 type StoredRecord = {
   sessionId: string;
   event: QueuedEvent;
@@ -43,10 +36,11 @@ function openDb(): Promise<IDBDatabase> {
   });
 }
 
+// getSessionId() → 32-char hex string, cached in localStorage across visits
 function getSessionId(): string {
   let id = localStorage.getItem(SESSION_ID_KEY);
   if (!id) {
-    id = crypto.randomUUID();
+    id = crypto.randomUUID().replace(/-/g, '');
     localStorage.setItem(SESSION_ID_KEY, id);
   }
   return id;
@@ -82,84 +76,6 @@ async function enqueue(record: StoredRecord): Promise<void> {
   });
 }
 
-async function readQueueSnapshot(): Promise<{ key: IDBValidKey; value: StoredRecord }[]> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readonly');
-    const items: { key: IDBValidKey; value: StoredRecord }[] = [];
-    const req = tx.objectStore(STORE_NAME).openCursor();
-    req.onsuccess = () => {
-      const cursor = req.result;
-      if (cursor) {
-        items.push({ key: cursor.primaryKey, value: cursor.value as StoredRecord });
-        cursor.continue();
-      } else {
-        resolve(items);
-      }
-    };
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function removeFromQueue(keys: IDBValidKey[]): Promise<void> {
-  if (keys.length === 0) return;
-  const db = await openDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
-    keys.forEach((key) => store.delete(key));
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// postEvents([e1, e2], sessionId) → true once /add-events returns 2xx, false after 3 failed attempts
-async function postEvents(events: QueuedEvent[], sessionId: string): Promise<boolean> {
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const res = await fetch(`${API_BASE_URL}/add-events`, {
-        method: 'POST',
-        headers: {
-          tenant_name: TENANT_NAME,
-          session_id: sessionId,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ events }),
-      });
-      if (res.ok) return true;
-    } catch {
-      // offline or network failure — fall through to retry/backoff
-    }
-    if (attempt < MAX_ATTEMPTS) {
-      await sleep(RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
-    }
-  }
-  return false;
-}
-
-let flushing = false;
-let pausedUntil = 0;
-
-async function flushQueue(): Promise<void> {
-  if (flushing || Date.now() < pausedUntil) return;
-  flushing = true;
-  try {
-    const snapshot = await readQueueSnapshot();
-    if (snapshot.length === 0) return;
-    const sessionId = snapshot[0].value.sessionId;
-    const ok = await postEvents(snapshot.map((item) => item.value.event), sessionId);
-    if (ok) {
-      await removeFromQueue(snapshot.map((item) => item.key));
-    } else {
-      pausedUntil = Date.now() + PAUSE_AFTER_FAILURE_MS;
-    }
-  } finally {
-    flushing = false;
-  }
-}
-
 interface SyncManager {
   register(tag: string): Promise<void>;
 }
@@ -174,22 +90,23 @@ async function registerServiceWorker(): Promise<void> {
   try {
     swRegistration = await navigator.serviceWorker.register('/service-worker.js');
   } catch {
-    // unsupported/blocked — the main-thread interval still covers flushing
+    // unsupported/blocked — events still queue in IndexedDB, waiting for a SW
   }
 }
 
-// Safety net for the tab-closed case: ask the SW to flush once connectivity
-// returns, on top of the 10s main-thread interval that runs while open.
+// Wakes the SW to flush the queue. On browsers without Background Sync
+// support (e.g. Safari), this is a no-op and queued events only go out the
+// next time the SW happens to receive some other event.
 async function requestBackgroundSync(): Promise<void> {
   if (!swRegistration || !('sync' in swRegistration)) return;
   try {
     await (swRegistration as ServiceWorkerRegistrationWithSync).sync.register('flush-events');
   } catch {
-    // Background Sync unsupported/denied — main-thread interval still covers it
+    // Background Sync registration rejected — nothing else to fall back to here
   }
 }
 
-// addEvent('lead_generation', 'contact_form_submit', 1, { email: 'a@b.com' }) → queues it, flushed within 10s
+// addEvent('lead_generation', 'contact_form_submit', 1, { email: 'a@b.com' }) → queues it in IndexedDB
 export async function addEvent(
   eventType: string,
   eventName: string,
@@ -276,8 +193,6 @@ function handleDocumentClick(event: MouseEvent): void {
 }
 
 if (typeof window !== 'undefined') {
-  setInterval(flushQueue, FLUSH_INTERVAL_MS);
-  window.addEventListener('online', flushQueue);
   void registerServiceWorker();
 
   trackPageVisit();
