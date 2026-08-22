@@ -112,7 +112,7 @@ function flushQueue() {
     const events = valid.map((item) => item.value.event);
     return cleanup.then(() =>
       fetch(`${API_BASE_URL}/add-events`, {
-        method: 'POST',
+        method: 'PUT',
         headers: {
           tenant_name: TENANT_NAME,
           session_id: sessionId,
