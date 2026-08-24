@@ -78,6 +78,28 @@ function removeFromQueue(keys) {
   );
 }
 
+// Marks a batch 'failed' in place (bumping attempts/lastError) instead of
+// deleting it, so it stays queued for the next retry.
+function markBatchFailed(batch, err) {
+  return openDb().then(
+    (db) =>
+      new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        batch.forEach((item) =>
+          store.put({
+            ...item.value,
+            status: 'failed',
+            attempts: (item.value.attempts || 0) + 1,
+            lastError: String((err && err.message) || err),
+          })
+        );
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      })
+  );
+}
+
 // Guards against records left behind by an older/incompatible schema — never
 // send those, just drop them (mirrors isValidRecord in src/lib/events.ts).
 function isValidRecord(value) {
@@ -94,9 +116,14 @@ function isValidRecord(value) {
 // The only place that talks to the network: batches whatever is sitting in
 // IndexedDB and sends it as one /add-events call. Runs every 10s (below) —
 // events are never sent the instant they're queued, only on this cadence.
-// Leaving a failure unhandled (no catch) lets the browser's own Background
-// Sync retry/backoff pick it back up on the 'sync'-triggered call; we don't
-// reimplement that here.
+// A failed fetch is re-thrown after marking the batch (see markBatchFailed)
+// so the browser's own Background Sync retry/backoff can still pick it back
+// up on the 'sync'-triggered call; we don't reimplement that here.
+//
+// No separate 'picked'/in-flight status is stored in IndexedDB: this flag
+// already guarantees only one flushQueue() body runs at a time in this SW,
+// which is the only thing that ever reads the queue — so nothing else could
+// pick the same batch concurrently.
 let flushing = false;
 
 function flushQueue() {
@@ -116,19 +143,27 @@ function flushQueue() {
     const batch = valid.slice(-MAX_BATCH_SIZE);
     const sessionId = batch[0].value.sessionId;
     const events = batch.map((item) => item.value.event);
+    // Derived from the batch's own IndexedDB keys (stable, never reused by
+    // autoIncrement) — not from the current time, so a retry of this exact
+    // batch after a lost response reuses the same key instead of minting a
+    // new one, which is what lets the backend dedupe it.
+    const idempotencyKey = `${sessionId}:${batch[0].key}-${batch[batch.length - 1].key}`;
     return cleanup.then(() =>
       fetch(`${API_BASE_URL}/add-events`, {
         method: 'PUT',
         headers: {
           tenant_name: TENANT_NAME,
           session_id: sessionId,
+          'Idempotency-Key': idempotencyKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ events }),
-      }).then((res) => {
-        if (!res.ok) throw new Error(`add-events failed: ${res.status}`);
-        return removeFromQueue(batch.map((item) => item.key));
       })
+        .then((res) => {
+          if (!res.ok) throw new Error(`add-events failed: ${res.status}`);
+          return removeFromQueue(batch.map((item) => item.key));
+        })
+        .catch((err) => markBatchFailed(batch, err).then(() => { throw err; }))
     );
   }).finally(() => {
     flushing = false;

@@ -20,8 +20,12 @@ type QueuedEvent = {
 
 // sessionId travels with the record (not just as a header) because the
 // service worker's sync-triggered flush has no access to localStorage.
+// status starts 'created' here; the service worker flips it to 'failed'
+// (adding attempts/lastError) on a delivery error — a successful send
+// deletes the record outright, so there's no 'done' status to write.
 type StoredRecord = {
   sessionId: string;
+  status: 'created';
   event: QueuedEvent;
 };
 
@@ -111,6 +115,7 @@ export async function addEvent(
 ): Promise<void> {
   await enqueue({
     sessionId: getSessionId(),
+    status: 'created',
     event: {
       event_type: eventType,
       event_name: eventName,
@@ -142,54 +147,36 @@ function getElementXPath(el: Element): string {
   return '/' + parts.join('/');
 }
 
-// scrollDepthFraction() → 0 (top) .. 1 (bottom); 1 when the page doesn't scroll at all
-function scrollDepthFraction(): number {
-  const max = document.documentElement.scrollHeight - window.innerHeight;
-  return max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 1;
-}
+if (typeof window !== 'undefined') {
+  void registerServiceWorker();
 
-function trackPageVisit(): void {
+  // Auto-tracked monitor events — each wired straight to its DOM listener, no wrapper functions.
   void addEvent('monitor', 'page_visit', 1, {
     current_path: window.location.pathname,
     query_params: Object.fromEntries(new URLSearchParams(window.location.search)),
   });
-}
 
-function trackScroll(): void {
-  void addEvent('monitor', 'scroll', scrollDepthFraction(), {
-    current_location: window.location.pathname,
+  document.addEventListener('click', (event: MouseEvent) => {
+    const target = event.target as Element | null;
+    if (!target) return;
+    const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
+    if (anchor) {
+      void addEvent('monitor', 'href_click', 1, {
+        current_path: window.location.pathname,
+        link_path: anchor.getAttribute('href') ?? '',
+      });
+    }
+    void addEvent('monitor', 'click', 1, { elementXPath: getElementXPath(target) });
   });
-}
 
-let scrollDebounceTimer: ReturnType<typeof setTimeout> | undefined;
-function trackScrollDebounced(): void {
-  clearTimeout(scrollDebounceTimer);
-  scrollDebounceTimer = setTimeout(trackScroll, 300);
-}
-
-function trackClick(el: Element): void {
-  void addEvent('monitor', 'click', 1, { elementXPath: getElementXPath(el) });
-}
-
-function trackHrefClick(anchor: HTMLAnchorElement): void {
-  void addEvent('monitor', 'href_click', 1, {
-    current_path: window.location.pathname,
-    link_path: anchor.getAttribute('href') ?? '',
-  });
-}
-
-function handleDocumentClick(event: MouseEvent): void {
-  const target = event.target as Element | null;
-  if (!target) return;
-  const anchor = target.closest('a[href]') as HTMLAnchorElement | null;
-  if (anchor) trackHrefClick(anchor);
-  trackClick(target);
-}
-
-if (typeof window !== 'undefined') {
-  void registerServiceWorker();
-
-  trackPageVisit();
-  window.addEventListener('scroll', trackScrollDebounced, { passive: true });
-  document.addEventListener('click', handleDocumentClick);
+  let scrollDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  window.addEventListener('scroll', () => {
+    clearTimeout(scrollDebounceTimer);
+    scrollDebounceTimer = setTimeout(() => {
+      const max = document.documentElement.scrollHeight - window.innerHeight; // 0 when the page doesn't scroll at all
+      void addEvent('monitor', 'scroll', max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 1, {
+        current_location: window.location.pathname,
+      });
+    }, 300);
+  }, { passive: true });
 }
