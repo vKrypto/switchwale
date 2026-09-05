@@ -5,7 +5,7 @@ type BrandMarkProps = {
   size?: number;
 };
 
-// SwitchWala "SW" mark. Two pre-rendered PNGs (light/dark) swapped via
+// SwitchWale "SW" mark. Two pre-rendered PNGs (light/dark) swapped via
 // Tailwind's dark: class so no JS/theme hook is needed — mirrors how the
 // rest of the app reacts to the html.dark class set in the head bootstrap.
 export default function BrandMark({ className, size = 28 }: BrandMarkProps) {
@@ -13,14 +13,14 @@ export default function BrandMark({ className, size = 28 }: BrandMarkProps) {
     <>
       <img
         src={withBase('/logo-light.png')}
-        alt="SwitchWala"
+        alt="SwitchWale"
         height={size}
         className={`block dark:hidden w-auto ${className ?? ''}`}
         style={{ height: size }}
       />
       <img
         src={withBase('/logo-dark.png')}
-        alt="SwitchWala"
+        alt="SwitchWale"
         height={size}
         className={`hidden dark:block w-auto ${className ?? ''}`}
         style={{ height: size }}

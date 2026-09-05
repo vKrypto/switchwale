@@ -1,4 +1,4 @@
-# SwitchWala — Feature Guide
+# SwitchWale — Feature Guide
 
 Every feature, ordered by how much it matters to a job seeker actually
 using this. Tier 1 is why you'd sign up; Tier 3 is what keeps you here.

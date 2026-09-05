@@ -1,6 +1,6 @@
 export type Theme = 'light' | 'dark';
 
-export const THEME_STORAGE_KEY = 'switchwala-theme';
+export const THEME_STORAGE_KEY = 'switchwale-theme';
 
 // The <head> bootstrap script in index.html / contact/index.html already
 // applied the right class before this module ever loads, so reading the

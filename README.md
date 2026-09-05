@@ -1,4 +1,4 @@
-# SwitchWala — Marketing Site
+# SwitchWale — Marketing Site
 
 The public, unauthenticated site that sells the product — two pages,
 both fully static and fully independent from `../frontend` (separate

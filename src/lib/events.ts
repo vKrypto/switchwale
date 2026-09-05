@@ -3,9 +3,9 @@
 // delivery (batching, retry, /add-events) lives in public/service-worker.js
 // — this file never calls fetch.
 
-const DB_NAME = 'switchwala_events';
+const DB_NAME = 'switchwale_events';
 const STORE_NAME = 'queue';
-const SESSION_ID_KEY = 'switchwala_session_id';
+const SESSION_ID_KEY = 'switchwale_session_id';
 
 type QueuedEvent = {
   event_type: string;

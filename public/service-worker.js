@@ -5,9 +5,9 @@
 const SW_VERSION = '__SW_VERSION__';
 const API_BASE_URL = '__SW_API_BASE_URL__';
 const TENANT_NAME = 'switchwale.com';
-const DB_NAME = 'switchwala_events';
+const DB_NAME = 'switchwale_events';
 const STORE_NAME = 'queue';
-const CACHE_PREFIX = 'switchwala-cache-';
+const CACHE_PREFIX = 'switchwale-cache-';
 const FLUSH_INTERVAL_MS = 10_000;
 const MAX_BATCH_SIZE = 50;
 
