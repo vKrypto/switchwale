@@ -20,11 +20,13 @@ import {
   Mic,
   Users,
   Globe,
+  Maximize2,
 } from 'lucide-react';
 import SiteHeader from './components/SiteHeader';
 import SiteFooter from './components/SiteFooter';
 import AnimatedCounter from './components/AnimatedCounter';
 import AgentCharacter from './components/AgentCharacter';
+import ImageLightbox, { type GalleryImage } from './components/ImageLightbox';
 import { withBase } from './basePath';
 
 const CONTACT_URL = withBase('/contact/');
@@ -379,6 +381,42 @@ const ROADMAP: RoadmapItem[] = [
   },
 ];
 
+const GALLERY_IMAGES: GalleryImage[] = [
+  ...JOURNEY.map((j) => ({ src: j.image, title: j.title, description: j.description })),
+  ...FEATURES.map((f) => ({ src: f.image, title: f.title, description: f.description })),
+];
+
+function GalleryThumbnail({
+  image,
+  index,
+  onOpen,
+  wrapperClassName = '',
+  imgClassName,
+}: {
+  image: GalleryImage;
+  index: number;
+  onOpen: (index: number) => void;
+  wrapperClassName?: string;
+  imgClassName: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(index)}
+      aria-label={image.title ? `View larger screenshot: ${image.title}` : 'View larger screenshot'}
+      className={`group relative block w-full overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 ${wrapperClassName}`}
+    >
+      <img src={image.src} alt="" loading="lazy" className={imgClassName} />
+      <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+        <Maximize2
+          size={22}
+          className="text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow"
+        />
+      </span>
+    </button>
+  );
+}
+
 function SectionHeading({
   eyebrow,
   title,
@@ -434,6 +472,7 @@ function JourneyFlow() {
 
 export default function WelcomePage() {
   const [energized, setEnergized] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState<number | null>(null);
   const reducedMotion = usePrefersReducedMotion();
   const ctaRef = useRef<HTMLAnchorElement>(null);
   const audiencesHeadingRef = useRef<HTMLDivElement>(null);
@@ -544,7 +583,7 @@ export default function WelcomePage() {
       >
         <SectionHeading eyebrow="How it works" title="Three steps. That's it." headingRef={journeyHeadingRef} />
         <motion.div variants={staggerContainer} className="space-y-16">
-          {JOURNEY.map((j) => (
+          {JOURNEY.map((j, i) => (
             <motion.div key={j.step} variants={fadeUp} className="grid md:grid-cols-2 gap-8 items-center">
               <div>
                 <span className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-brand-600 text-white font-bold">
@@ -559,11 +598,12 @@ export default function WelcomePage() {
                   </div>
                 )}
               </div>
-              <img
-                src={j.image}
-                alt=""
-                loading="lazy"
-                className="rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm w-full aspect-[3/2] object-cover object-top"
+              <GalleryThumbnail
+                image={GALLERY_IMAGES[i]}
+                index={i}
+                onOpen={setGalleryIndex}
+                wrapperClassName="rounded-xl border border-gray-200 dark:border-gray-800 shadow-sm"
+                imgClassName="w-full aspect-[3/2] object-cover object-top"
               />
             </motion.div>
           ))}
@@ -594,7 +634,7 @@ export default function WelcomePage() {
           headingRef={featuresHeadingRef}
         />
         <motion.div variants={staggerContainer} className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {FEATURES.map((f) => (
+          {FEATURES.map((f, i) => (
             <motion.div
               key={f.title}
               variants={fadeUp}
@@ -602,7 +642,12 @@ export default function WelcomePage() {
               transition={{ type: 'spring', stiffness: 300, damping: 20 }}
               className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden hover:shadow-lg dark:hover:shadow-black/30 transition-shadow"
             >
-              <img src={f.image} alt="" loading="lazy" className="w-full h-40 object-cover object-top" />
+              <GalleryThumbnail
+                image={GALLERY_IMAGES[JOURNEY.length + i]}
+                index={JOURNEY.length + i}
+                onOpen={setGalleryIndex}
+                imgClassName="w-full h-40 object-cover object-top"
+              />
               <div className="p-5">
                 <f.icon size={20} className="text-brand-600 dark:text-brand-500" />
                 <h3 className="mt-3 font-semibold text-gray-900 dark:text-gray-100">{f.title}</h3>
@@ -697,6 +742,13 @@ export default function WelcomePage() {
       </main>
 
       <SiteFooter />
+
+      <ImageLightbox
+        images={GALLERY_IMAGES}
+        index={galleryIndex}
+        onClose={() => setGalleryIndex(null)}
+        onNavigate={setGalleryIndex}
+      />
     </div>
     </MotionConfig>
   );
